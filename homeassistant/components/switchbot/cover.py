@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 import switchbot
+from switchbot.const import CurtainSpeed
 
 from homeassistant.components.cover import (
     ATTR_CURRENT_POSITION,
@@ -37,11 +38,16 @@ async def async_setup_entry(
     if isinstance(coordinator.device, switchbot.SwitchbotBlindTilt):
         async_add_entities([SwitchBotBlindTiltEntity(coordinator)])
     else:
-        async_add_entities([SwitchBotCurtainEntity(coordinator)])
+        async_add_entities(
+            [
+                SwitchBotCurtainEntity(coordinator),
+                LowSpeedSwitchBotCurtainEntity(coordinator),
+            ]
+        )
 
 
 class SwitchBotCurtainEntity(SwitchbotEntity, CoverEntity, RestoreEntity):
-    """Representation of a Switchbot."""
+    """Representation of a Switchbot curtain."""
 
     _device: switchbot.SwitchbotCurtain
     _attr_device_class = CoverDeviceClass.CURTAIN
@@ -58,6 +64,7 @@ class SwitchBotCurtainEntity(SwitchbotEntity, CoverEntity, RestoreEntity):
         """Initialize the Switchbot."""
         super().__init__(coordinator)
         self._attr_is_closed = None
+
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added."""
@@ -108,6 +115,42 @@ class SwitchBotCurtainEntity(SwitchbotEntity, CoverEntity, RestoreEntity):
         self._attr_current_cover_position = self.parsed_data["position"]
         self._attr_is_closed = self.parsed_data["position"] <= 20
         self._attr_is_opening = self.parsed_data["inMotion"]
+        self.async_write_ha_state()
+
+
+class LowSpeedSwitchBotCurtainEntity(SwitchBotCurtainEntity):
+    """Representation of a Switchbot curtain slow mode."""
+
+    translation_key = "low_speed"
+
+    def __init__(self, coordinator: SwitchbotDataUpdateCoordinator) -> None:
+        """Initialize the Switchbot."""
+        super().__init__(coordinator)
+        # self._attr_name = "Low speed"
+        self._attr_unique_id = f"{self._attr_unique_id}-low-speed"
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        """Open the curtain slowly."""
+
+        _LOGGER.debug("Switchbot to slowly open curtain %s", self._address)
+        self._last_run_success = bool(await self._device.open(speed=CurtainSpeed.SLOW))
+        self.async_write_ha_state()
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        """Close the curtain slowly."""
+
+        _LOGGER.debug("Switchbot to slowly close the curtain %s", self._address)
+        self._last_run_success = bool(await self._device.close(speed=CurtainSpeed.SLOW))
+        self.async_write_ha_state()
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        """Move the cover shutter to a specific position slowly."""
+        position = kwargs.get(ATTR_POSITION)
+
+        _LOGGER.debug("Switchbot to slowly move at %d %s", position, self._address)
+        self._last_run_success = bool(
+            await self._device.set_position(position, speed=CurtainSpeed.SLOW)
+        )
         self.async_write_ha_state()
 
 
